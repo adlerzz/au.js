@@ -1,69 +1,86 @@
 (() => {
-    const utils = {
-        $: (selector, base = document) => base.querySelector(selector),
-        $$: (selector, base = document) => [...base.querySelectorAll(selector)],
-        ord: (char) => char.codePointAt(),
-        chr: (i) => String.fromCodePoint(i),
-        strSplice: (string, from, delCount, insert) => string.slice(0, from) + insert + string.slice(from + delCount),
-        randomInt: (from, to) => from + Math.random() * (to - from) | 0,
-        strFrom: (length, f) => Array.from({length}, (_, i) => f(i)).join(""),
-        abc: (first, last) => utils.strFrom(utils.ord(last) - utils.ord(first) + 1, (i) => utils.chr(i + utils.ord(first))),
-        randomStr: (length, abc) => utils.strFrom(length, () => abc[utils.randomInt(0, abc.length)]),
-    };
-    utils.UPPER_CHARS = utils.abc("A", "Z");
-    utils.LOWER_CHARS = utils.abc("a", "z");
-    utils.DIGITS = utils.abc("0", "9");
+    
+    const $ = (selector, base = document) => base.querySelector(selector);
+    const $$ = (selector, base = document) => [...base.querySelectorAll(selector)];
+    const ord = (char) => char.codePointAt();
+    const chr = (i) => String.fromCodePoint(i);
+    const strSplice = (string, from, delCount, insert) => string.slice(0, from) + insert + string.slice(from + delCount);
+    const randomInt = (from, to) => Math.floor(from + Math.random() * (to - from));
+    const strFrom = (length, f) => Array.from({length}, (_, i) => f(i)).join("");
+    const createAbc = (first, last) => strFrom(ord(last) - ord(first) + 1, (i) => chr(i + ord(first)));
+    const randomStr = (length, abc) => strFrom(length, () => abc[randomInt(0, abc.length)]);
 
-    const internal = {
-        delay: async (time) => new Promise((resolve) => { setTimeout(resolve, time) }),
-        waitBy: async (condition, checkEvery, timeout) => 
-            new Promise((resolve, reject) => {
-                const timerId = setInterval(() => {
-                    console.log("condition", condition());
-                    if(condition()){
-                        clearInterval(timerId);
-                        resolve();
-                    }
-                }, checkEvery);
-                setTimeout(() => {
-                    clearInterval(timerId);
-                    reject();
-                }, timeout);
-            }),
+    const UPPER_CHARS = createAbc("A", "Z");
+    const LOWER_CHARS = createAbc("a", "z");
+    const DIGITS = createAbc("0", "9");
 
-        findByText: (selector, text, index = 0) => 
-            utils.$$(selector)
-                .filter( element => utils.$$('*', element)
-                    .find(subElement => subElement.textContent.trim() === text)
-                )?.[index],
-
-        select: (query) => {
-            if (!Array.isArray(query)){
-                return utils.$(query);
-            }
-            const [selector, sub, subIndex] = query;
-            if (typeof sub === 'number'){
-                return utils.$$(selector)[sub];
-            }
-            return internal.findByText(selector, sub, subIndex);
-        },
+    const delay = async (time) => 
+        new Promise((resolve) => { 
+            setTimeout(resolve, time) 
+        });
         
-        getContext: (name) => AuModule.context[name],
+    const waitBy = async (conditionFn, checkEvery, timeout) => 
+        new Promise((resolve, reject) => {
+            const timerId = setInterval(() => {
+                const condition = conditionFn();
+                log(LogLevel.VERBOSE, `condition: ${condition}`);
+                if(!condition){
+                    return;
+                }
+                clearInterval(timerId);
+                resolve();
+            }, checkEvery);
+            setTimeout(() => {
+                clearInterval(timerId);
+                reject();
+            }, timeout);
+        });
+
+    const findByText = (selector, text, index = 0) => 
+        $$(selector)
+            .filter( element => $$('*', element)
+                .find(subElement => subElement.textContent.trim() === text)
+            )?.[index];
+
+    const select = (query) => {
+        if (!Array.isArray(query)){
+            return $(query);
+        }
+        const [selector, sub, subIndex] = query;
+        if (typeof sub === 'number'){
+            return $$(selector)[sub];
+        }
+        return findByText(selector, sub, subIndex);
     }
+        
+    const getContext = (name) => AuModule.context[name];
+
+    const log = (level, message) => {
+        if(level <= AuModule.loglevel){
+            console.log(typeof message === 'function' ? message() : message );
+        }
+    };
+    
+    const LogLevel = {
+        VERBOSE: 100,
+        TRACE: 10,
+        OFF: 1,
+    };
 
     class AuModule {
 
         static context = {};
+        static loglevel = LogLevel.TRACE; 
 
         static begin(basicDelay = 500){
-            const id = utils.randomInt(0, 1024);
+            const id = randomInt(0, 1024);
             const actionsList = [];
             AuModule.context = {};
             class Builder {
 
                 static doAction( func ) {
                     const action = async () => {
-                        func();
+                        await func();
                     };
                     actionsList.push( [action, []]);
                     return Builder;
@@ -71,15 +88,23 @@
                 
                 static setContext(name, producer) {
                     const action = async () => {
-                        AuModule.context[name] = producer();
+                        AuModule.context[name] = await producer();
                     };
+                    actionsList.push( [action, []]);
+                    return Builder;
+                }
+
+                static setLogLevel(loglevel) {
+                    const action = async () => {
+                        AuModule.loglevel = loglevel;
+                    }
                     actionsList.push( [action, []]);
                     return Builder;
                 }
 
                 static delay(time) {
                     const action = async (time) => {
-                        await internal.delay(time);
+                        await delay(time);
                     }
                     actionsList.push( [action, [time]]);
                     return Builder;
@@ -87,11 +112,11 @@
 
                 static clickOn(query, time = basicDelay){
                     const action = async (query, time) => {
-                        console.info(`click on "${query}"`);
-                        const element = internal.select(query);
+                        log(LogLevel.VERBOSE, `click on [${query}]`);
+                        const element = select(query);
                         element?.click();
-                        console.info(`wait for ${time}ms`);
-                        await internal.delay(time);
+                        log(LogLevel.VERBOSE, `wait for ${time}ms`);
+                        await delay(time);
                     };
                     actionsList.push([action, [query, time]]);
                     return Builder;
@@ -99,53 +124,64 @@
 
                 static typeText(query, text, time = basicDelay){
                     const action = async (query, text, time) => {
-                        console.info(`input into "${query}"`);
-                        console.info(`text: "${text}"`);
-                        const wrapper = internal.select(query);
-                        const felement = utils.$("*>label", wrapper);
-                        const ielement = utils.$("input", wrapper);
+                        typeof text === "function" && (text = text());
+                        log(LogLevel.VERBOSE, `type text: "${text}" into [${query.join(", ")}]`);
+                        const wrapper = select(query);
+                        const felement = $("*>label", wrapper);
+                        const ielement = $("input", wrapper);
                         felement.click();
-                        ielement.value = typeof text === 'function' ? text() : text;
+                        
+                        ielement.value = text;
                         ielement.dispatchEvent(new Event('input', {bubbles: true}));
-                        console.info(`wait for ${time}ms`);
-                        await internal.delay(time);
+
+                        log(LogLevel.VERBOSE, `wait for ${time}ms`);
+                        await delay(time);
                     };
                     actionsList.push([action, [query, text, time]]);
                     return Builder;
                 }
 
                 static waitFor(query, checkEvery = basicDelay, timeout = checkEvery * 60){
-                    const action = async (query, checkEvery, timeout) => 
-                        internal.waitBy(() => !!internal.select(query), checkEvery, timeout);
+                    const action = async (query, checkEvery, timeout) => {
+                        log(LogLevel.VERBOSE, "wait")
+                            return waitBy(() => !!select(query), checkEvery, timeout);
+                        }
                     actionsList.push([action, [query, checkEvery, timeout]])
                     return Builder;
                 }
 
                 static waitUntil(query, checkEvery = basicDelay, timeout = checkEvery * 60){
                     const action = async (query, checkEvery, timeout) => 
-                        internal.waitBy(() => !internal.select(query), checkEvery, timeout);
+                        waitBy(() => !select(query), checkEvery, timeout);
                     actionsList.push([action, [query, checkEvery, timeout]])
                     return Builder;
                 }
 
                 static async end(){
-                    console.log({actionsList});
-                    console.log(`${id}, inner Builder.end();`);
+                    log(LogLevel.VERBOSE, {actionsList});
+                    log(LogLevel.VERBOSE, `au execute id:${id}`);
                     for(const [action, args] of actionsList){
-                        await action.apply(null, args);
+                        try {
+                            await action.apply(null, args);
+                        } catch (error){
+                            console.error(error);
+                            break;
+                        }
                     };
                 }
             }
             
-            console.log("Au.begin()");
+            log(LogLevel.VERBOSE, "au start");
             return Builder;
         }
 
     }
 
     globalThis.au = {
-        ...utils,
-        ...internal,
+        $, $$, strSplice, randomInt, randomStr, strFrom,
+        createAbc, findByText, select, getContext, log, 
+        DIGITS, UPPER_CHARS, LOWER_CHARS,
+        LogLevel,
         begin: AuModule.begin,
     }
 })();
