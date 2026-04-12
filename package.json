@@ -1,0 +1,19 @@
+{
+    "name": "au.js",
+    "version": "0.0.1",
+    "license": "MIT",
+    "scripts": {
+        "build": "rollup -c"
+    },
+    "dependencies": {
+        "tslib": "2.8.1"
+    },
+    "devDependencies": {
+        "@rollup/plugin-commonjs": "29.0.0",
+        "@rollup/plugin-node-resolve": "16.0.3",
+        "@rollup/plugin-terser": "0.4.4",
+        "@rollup/plugin-typescript": "12.3.0",
+        "rollup": "4.54.0",
+        "typescript": "6.0.2"
+    }
+}
